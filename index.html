@@ -1505,49 +1505,133 @@ async function listarPedidos() {
 
 
 async function gerarRelatorioMensal() {
-    // Executar limpeza automática de pedidos antigos antes de gerar o relatório
     await limparPedidosAntigos();
 
-    const mes = prompt('Digite o mês (MM) para gerar o relatório:', new Date().getMonth() + 1);
-    const ano = prompt('Digite o ano (AAAA):', new Date().getFullYear());
-    if (!mes || !ano) return;
-    const inicioMes = `${ano}-${mes.padStart(2, '0')}-01`;
-    const ultimoDia = new Date(parseInt(ano), parseInt(mes), 0).getDate();
-    const fimMes = `${ano}-${mes.padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+    const MESES_NOME = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-    // Buscar pedidos APROVADOS (incluindo pedidos antigos sem coluna status)
+    const mes = prompt('Digite o mês (1-12) para gerar o relatório:', new Date().getMonth() + 1);
+    const ano = prompt('Digite o ano:', new Date().getFullYear());
+    if (!mes || !ano) return;
+
+    const mesNum = parseInt(mes);
+    const anoNum = parseInt(ano);
+    const inicioMes = `${anoNum}-${String(mesNum).padStart(2,'0')}-01`;
+    const ultimoDia = new Date(anoNum, mesNum, 0).getDate();
+    const fimMes = `${anoNum}-${String(mesNum).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}`;
+
     const { data: allData, error } = await sb.from('pedidos')
         .select('*, clientes:cliente_id(razao_social)')
         .gte('data_emissao', inicioMes)
         .lte('data_emissao', fimMes)
         .order('data_emissao');
 
+    if (error) { alert('Erro ao buscar dados: ' + error.message); return; }
 
-    // Filtrar apenas pedidos aprovados ou sem status (antigos)
-    // EXCLUIR apenas PENDENTES e CANCELADOS
-    const data = allData.filter(p => !p.status || p.status === 'APROVADO');
+    const data = (allData || []).filter(p => !p.status || p.status === 'APROVADO');
 
-    if (error) { alert('Erro ao gerar relatório: ' + error.message); return; }
-    if (data.length === 0) { alert('Nenhum pedido APROVADO encontrado para o período.'); return; }
+    if (data.length === 0) { alert('Nenhum pedido APROVADO encontrado para ' + MESES_NOME[mesNum] + '/' + anoNum); return; }
 
-    let conteudo = 'Número Pedido;Razão Social;Total C/ ST;Data Emissão;Condição Pagamento\n';
-    data.forEach(pedido => {
-        const nomeCliente = pedido.clientes?.razao_social || 'N/A';
-        const totalFormatado = formatarMoeda(pedido.total_com_st);
-        const condicaoPagamento = pedido.condicao_pagamento || '';
-        const numeroPedido = pedido.numero_pedido || 'X';  // Usa 'X' se não tiver número
-        conteudo += `${numeroPedido};${nomeCliente};${totalFormatado};${formatarData(pedido.data_emissao)};${condicaoPagamento}\n`;
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+    const PRIMARY = [26, 58, 92];
+    const WHITE = [255, 255, 255];
+    const LIGHT_BLUE = [220, 238, 251];
+    const GREEN_BG = [232, 245, 233];
+    const GREEN_TEXT = [46, 125, 50];
+
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+
+    // Header background
+    doc.setFillColor(...PRIMARY);
+    doc.rect(0, 0, pageW, 28, 'F');
+
+    // Logo placeholder or company name
+    const logoDataUrl = window.logoDataUrl || null;
+    if (logoDataUrl) {
+        try { doc.addImage(logoDataUrl, 'PNG', 8, 4, 30, 20); } catch(e) {}
+    }
+
+    // Title
+    doc.setTextColor(...WHITE);
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('RELATÓRIO DE FECHAMENTO MENSAL', pageW / 2, 12, { align: 'center' });
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text(MESES_NOME[mesNum] + ' / ' + anoNum + '   ·   Somente Pedidos Aprovados', pageW / 2, 21, { align: 'center' });
+
+    // Summary cards
+    const totalGeral = data.reduce((s, p) => s + (p.total_com_st || 0), 0);
+    const qtd = data.length;
+    const ticketMedio = qtd > 0 ? totalGeral / qtd : 0;
+
+    const cardY = 33;
+    const cards = [
+        { label: 'Total Aprovado', value: 'R$ ' + totalGeral.toLocaleString('pt-BR', {minimumFractionDigits:2}) },
+        { label: 'Qtd. Pedidos', value: qtd.toString() },
+        { label: 'Ticket Médio', value: 'R$ ' + ticketMedio.toLocaleString('pt-BR', {minimumFractionDigits:2}) },
+        { label: 'Período', value: inicioMes.split('-').reverse().join('/') + ' a ' + fimMes.split('-').reverse().join('/') }
+    ];
+    const cardW = (pageW - 20) / 4;
+    cards.forEach((c, i) => {
+        const x = 10 + i * (cardW + 1);
+        doc.setFillColor(...LIGHT_BLUE);
+        doc.roundedRect(x, cardY, cardW, 14, 2, 2, 'F');
+        doc.setFillColor(...PRIMARY);
+        doc.roundedRect(x, cardY, cardW, 5, 2, 2, 'F');
+        doc.rect(x, cardY + 3, cardW, 2, 'F');
+        doc.setTextColor(...WHITE);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'bold');
+        doc.text(c.label.toUpperCase(), x + cardW/2, cardY + 3.5, { align: 'center' });
+        doc.setTextColor(...PRIMARY);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.text(c.value, x + cardW/2, cardY + 11, { align: 'center' });
     });
-    const blob = new Blob([conteudo], { type: 'text/plain' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Controle_de_pedidos_${mes}_${ano}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-    alert('Relatório mensal gerado com sucesso!');
+
+    // Table
+    const tableRows = data.map((p, idx) => [
+        idx + 1,
+        p.numero_pedido || '-',
+        p.clientes?.razao_social || 'N/A',
+        p.data_emissao ? p.data_emissao.split('-').reverse().join('/') : '-',
+        p.condicao_pagamento || '-',
+        'R$ ' + (p.total_com_st || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})
+    ]);
+
+    doc.autoTable({
+        head: [['#', 'Nº Pedido', 'Razão Social', 'Data Emissão', 'Cond. Pagamento', 'Valor c/ ST']],
+        body: tableRows,
+        startY: 52,
+        styles: { fontSize: 8, cellPadding: 2.5, textColor: [30,30,30] },
+        headStyles: { fillColor: PRIMARY, textColor: WHITE, fontStyle: 'bold', fontSize: 8.5 },
+        alternateRowStyles: { fillColor: [247, 250, 253] },
+        columnStyles: {
+            0: { cellWidth: 8, halign: 'center' },
+            1: { cellWidth: 22, halign: 'center' },
+            2: { cellWidth: 90 },
+            3: { cellWidth: 25, halign: 'center' },
+            4: { cellWidth: 30, halign: 'center' },
+            5: { cellWidth: 32, halign: 'right', fontStyle: 'bold' }
+        },
+        foot: [['', '', 'TOTAL GERAL', '', '', 'R$ ' + totalGeral.toLocaleString('pt-BR', {minimumFractionDigits:2})]],
+        footStyles: { fillColor: LIGHT_BLUE, textColor: PRIMARY, fontStyle: 'bold', fontSize: 9 },
+        margin: { left: 10, right: 10 },
+        didDrawPage: (hookData) => {
+            const pg = hookData.pageNumber;
+            doc.setFontSize(8);
+            doc.setTextColor(150,150,150);
+            doc.text('Gerado em ' + new Date().toLocaleString('pt-BR'), 10, pageH - 5);
+            doc.text('Página ' + pg, pageW - 10, pageH - 5, { align: 'right' });
+        }
+    });
+
+    const nomeArquivo = `Relatorio_${String(mesNum).padStart(2,'0')}_${anoNum}.pdf`;
+    doc.save(nomeArquivo);
+    alert('✅ Relatório PDF gerado!\n\nArquivo: ' + nomeArquivo + '\nPedidos aprovados: ' + qtd + '\nTotal: R$ ' + totalGeral.toLocaleString('pt-BR', {minimumFractionDigits:2}));
 }
 
 // ========== GESTÃO DE PRODUTOS ==========
