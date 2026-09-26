@@ -774,6 +774,63 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let clientes = [], produtos = [], itensPedido = [], clienteSelecionado = null;
 
+// ===== COMANDO 3 — REGRA CENTRAL DA DATA DE CORTE (aditivo) =====
+// Data de corte padrão (formato AAAA-MM-DD). Sobrescrita no carregamento
+// pela chave 'data_corte_sem_st' da tabela parametros_sistema.
+let dataCorteSemST = '2026-09-30';
+
+// Lê a data de corte no banco. Nunca lança erro: em qualquer falha mantém o padrão.
+async function carregarDataCorteSemST() {
+    try {
+        const { data, error } = await sb
+            .from('parametros_sistema')
+            .select('valor')
+            .eq('chave', 'data_corte_sem_st')
+            .maybeSingle();
+        if (error) throw error;
+        const valor = data && data.valor ? String(data.valor).slice(0, 10) : '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(valor)) {
+            dataCorteSemST = valor;
+            console.log('📌 Data de corte sem ST carregada:', dataCorteSemST);
+        } else {
+            console.warn('⚠️ Valor inválido em data_corte_sem_st. Usando padrão:', dataCorteSemST);
+        }
+    } catch (e) {
+        console.warn('⚠️ Não foi possível ler data_corte_sem_st. Usando padrão:', dataCorteSemST, e && e.message ? e.message : e);
+    }
+}
+
+// Compara SOMENTE o dia (sem fuso), em ISO 'AAAA-MM-DD'.
+function usaSemST(dataEmissao) {
+    let dataISO = '';
+    if (typeof dataEmissao === 'string') {
+        dataISO = dataEmissao.slice(0, 10);
+    } else if (dataEmissao instanceof Date) {
+        dataISO = `${dataEmissao.getFullYear()}-${String(dataEmissao.getMonth() + 1).padStart(2, '0')}-${String(dataEmissao.getDate()).padStart(2, '0')}`;
+    }
+    const corteISO = typeof dataCorteSemST === 'string' ? dataCorteSemST.slice(0, 10) : '';
+    if (!dataISO || !corteISO) return false;
+    return dataISO >= corteISO;
+}
+
+// Total do pedido conforme a regra central (sem alterar telas ainda).
+function totalDoPedido(pedido) {
+    if (!pedido) return 0;
+    return usaSemST(pedido.data_emissao)
+        ? (pedido.total_sem_st || 0)
+        : (pedido.total_com_st || 0);
+}
+
+// Valor de um item do pedido conforme a regra central.
+function valorDoItem(item, pedido) {
+    if (!item) return 0;
+    const dataRef = pedido ? pedido.data_emissao : item.data_emissao;
+    return usaSemST(dataRef)
+        ? (item.total_sem_st || 0)
+        : (item.total_com_st || 0);
+}
+// ===== FIM COMANDO 3 =====
+
 // Logo Eletrofitas em base64 (imagem exata fornecida)
 const LOGO_ELETROFITAS_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAvAAAAAyCAYAAAA8RrOCAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAABbLSURBVHhe7Z0HeBRV+8bv7iZA6L1XQUGqKE1RERCwoqKigKhY0M8GCioWbIgNReyIFRs2sFIEBRQVpEgJvfceSO/7//2+cyfZ3WyyCSQhm+R9n2eemdnZnTlzZs7Me9555z2Kqqoi8Xg8Ho/H4/F4PB6P58wjEQj4PB6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU1IgC/g8Xg8Ho/H4/F4PJ7ThAT4Ah6Px+PxeDwej8fjOU0oivI/3vTHGV5qVgAAAABJRU5ErkJggg==';
 
@@ -1018,6 +1075,7 @@ function esconderTudo() {
 }
 
 async function init() {
+    carregarDataCorteSemST(); // COMANDO 3: não bloqueia o carregamento; em falha usa o padrão
     await carregarClientes();
     await carregarProdutos();
     await limparPedidosAntigos(); // Limpar pedidos com mais de 180 dias
@@ -1267,18 +1325,25 @@ async function gerarPDF(comNumeroPedido = false) {
     const desconto = document.getElementById('desconto').value;
     doc.text(`Desconto: ${desconto ? desconto + ' %' : ''}`, 10, y);
     y += 5;
+    // COMANDO 5: usa a regra central (usaSemST) apenas para escolher colunas; não recalcula valores.
+    const aplicarSemST = usaSemST(dataPedido);
     const tableData = itensPedido.map((item, index) => [
         index + 1, item.codigo, item.quantidade, item.descricao, item.amp_emb,
         `R$ ${formatarMoeda(item.preco_tabela)}`, `R$ ${formatarMoeda(item.preco_unitario_sem_st)}`,
-        `R$ ${formatarMoeda(item.total_sem_st)}`, `R$ ${formatarMoeda(item.total_com_st)}`
-    ]);
+        `R$ ${formatarMoeda(item.total_sem_st)}`
+    ].concat(aplicarSemST ? [] : [`R$ ${formatarMoeda(item.total_com_st)}`]));
     let totalSemST = itensPedido.reduce((sum, item) => sum + item.total_sem_st, 0);
     let totalComST = itensPedido.reduce((sum, item) => sum + item.total_com_st, 0);
+    const pedidoParaTotal = { data_emissao: dataPedido, total_sem_st: totalSemST, total_com_st: totalComST };
     doc.autoTable({
         startY: y,
-        head: [['Item', 'Código', 'QDE', 'Descrição', 'Amp./Emb.', 'Tabela R$', 'Unitário S/ ST R$', 'Total S/ ST R$', 'Total C/ ST R$']],
+        head: [aplicarSemST
+            ? ['Item', 'Código', 'QDE', 'Descrição', 'Amp./Emb.', 'Tabela R$', 'Unitário S/ ST R$', 'Total S/ ST R$']
+            : ['Item', 'Código', 'QDE', 'Descrição', 'Amp./Emb.', 'Tabela R$', 'Unitário S/ ST R$', 'Total S/ ST R$', 'Total C/ ST R$']],
         body: tableData,
-        foot: [['', '', '', '', '', '', 'TOTAL S/ST:', `R$ ${formatarMoeda(totalSemST)}`, `R$ ${formatarMoeda(totalComST)}`]],
+        foot: [aplicarSemST
+            ? ['', '', '', '', '', '', 'TOTAL S/ST:', `R$ ${formatarMoeda(totalDoPedido(pedidoParaTotal))}`]
+            : ['', '', '', '', '', '', 'TOTAL S/ST:', `R$ ${formatarMoeda(totalSemST)}`, `R$ ${formatarMoeda(totalComST)}`]],
         theme: 'grid', styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: [102, 126, 234], textColor: 255, fontStyle: 'bold' },
         footStyles: { fillColor: [102, 126, 234], textColor: 255, fontStyle: 'bold' }
@@ -1563,7 +1628,8 @@ async function gerarRelatorioMensal() {
     doc.text(MESES_NOME[mesNum] + ' / ' + anoNum + '   ·   Somente Pedidos Aprovados', pageW / 2, 21, { align: 'center' });
 
     // Summary cards
-    const totalGeral = data.reduce((s, p) => s + (p.total_com_st || 0), 0);
+    // COMANDO 4: Total Aprovado, Ticket Médio e rodapé passam a usar a regra central.
+    const totalGeral = data.reduce((s, p) => s + totalDoPedido(p), 0);
     const qtd = data.length;
     const ticketMedio = qtd > 0 ? totalGeral / qtd : 0;
 
@@ -2234,6 +2300,8 @@ async function gerarPDFDoPedido(pedido, numeroPedidoAprovado) {
         doc.text(`Desconto: ${pedido.desconto_percentual ? pedido.desconto_percentual + ' %' : ''}`, 10, y);
         y += 5;
 
+        // COMANDO 5: usa a regra central (usaSemST) apenas para escolher colunas; não recalcula valores.
+        const aplicarSemST = usaSemST(pedido.data_emissao);
         // Tabela de itens
         const tableData = pedido.itens_pedido.map((item, index) => {
             const prod = item.produtos;
@@ -2245,16 +2313,19 @@ async function gerarPDFDoPedido(pedido, numeroPedidoAprovado) {
                 prod.amp_emb || '',
                 `R$ ${formatarMoeda(item.preco_tabela || 0)}`,
                 `R$ ${formatarMoeda(item.preco_unit_sem_st)}`,
-                `R$ ${formatarMoeda(item.total_sem_st)}`,
-                `R$ ${formatarMoeda(item.total_com_st)}`
-            ];
+                `R$ ${formatarMoeda(item.total_sem_st)}`
+            ].concat(aplicarSemST ? [] : [`R$ ${formatarMoeda(item.total_com_st)}`]);
         });
 
         doc.autoTable({
             startY: y,
-            head: [['Item', 'Código', 'QDE', 'Descrição', 'Amp./Emb.', 'Tabela R$', 'Unitário S/ ST R$', 'Total S/ ST R$', 'Total C/ ST R$']],
+            head: [aplicarSemST
+                ? ['Item', 'Código', 'QDE', 'Descrição', 'Amp./Emb.', 'Tabela R$', 'Unitário S/ ST R$', 'Total S/ ST R$']
+                : ['Item', 'Código', 'QDE', 'Descrição', 'Amp./Emb.', 'Tabela R$', 'Unitário S/ ST R$', 'Total S/ ST R$', 'Total C/ ST R$']],
             body: tableData,
-            foot: [['', '', '', '', '', '', 'TOTAL S/ST:', `R$ ${formatarMoeda(pedido.total_sem_st)}`, `R$ ${formatarMoeda(pedido.total_com_st)}`]],
+            foot: [aplicarSemST
+                ? ['', '', '', '', '', '', 'TOTAL S/ST:', `R$ ${formatarMoeda(totalDoPedido(pedido))}`]
+                : ['', '', '', '', '', '', 'TOTAL S/ST:', `R$ ${formatarMoeda(pedido.total_sem_st)}`, `R$ ${formatarMoeda(pedido.total_com_st)}`]],
             theme: 'grid',
             styles: { fontSize: 8, cellPadding: 2 },
             headStyles: { fillColor: [102, 126, 234], textColor: 255, fontStyle: 'bold' },
