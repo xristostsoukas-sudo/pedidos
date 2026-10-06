@@ -1451,7 +1451,10 @@ function formatarData(dataISO) {
 }
 
 function formatarMoeda(valor) {
-    return valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // Correção: preço nulo/vazio/NaN não pode derrubar a lista (mostra 0,00)
+    const numero = Number(valor);
+    const seguro = isFinite(numero) ? numero : 0;
+    return seguro.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 async function confirmarPedido() {
